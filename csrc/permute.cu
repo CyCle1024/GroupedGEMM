@@ -67,6 +67,38 @@ static __global__ void moe_permute_topK_row_map(
     }
 }
 
+static __global__ void moe_permute_topK_row_map(
+    const int *sorted_row_id,
+    int *row_id_map,
+    const int num_rows,
+    const int num_topK,
+    const int num_out_tokens,
+    const int num_negative_one_in_indices)
+{
+    // Each block corresponds to one source token
+    // row_id_map[num_topK][num_rows]
+    const int bid = blockIdx.x;
+    const int tid = threadIdx.x;
+    const int idx = bid * blockDim.x + tid;
+    const int idx_without_negative_one = idx - num_negative_one_in_indices;
+
+    if (idx >= num_rows * num_topK)
+        return;
+
+    int source_row = sorted_row_id[idx];
+    int source_token_id = source_row / num_topK;
+    int source_topK_id = source_row % num_topK;
+
+    if (idx_without_negative_one < 0 || idx_without_negative_one >= num_out_tokens)
+    {
+        row_id_map[source_topK_id * num_rows + source_token_id] = -1;
+    }
+    else
+    {
+        row_id_map[source_topK_id * num_rows + source_token_id] = idx_without_negative_one;
+    }
+}
+
 template <typename T, typename TCompute, int kElementsPerAccess, bool hasProb>
 __global__ void moe_recover_topK_kernel(const T *input,
                                         T *unpermuted_output,
@@ -275,6 +307,7 @@ void moe_permute_topK_kernel_launcher(
     const int num_cols,
     const int num_out_tokens,
     cudaStream_t stream,
+    const int num_negative_one_in_indices = 0,
     float *prob_grad = nullptr,
     const T *input_fwd = nullptr)
 {
@@ -285,12 +318,30 @@ void moe_permute_topK_kernel_launcher(
             // permute_topK fwd
             int threads = 64;
             int blocks = (num_rows * num_topK + threads - 1) / threads;
-            moe_permute_topK_row_map<<<blocks, threads, 0, stream>>>(
-                sorted_row_id,
-                row_id_map,
-                num_rows,
-                num_topK,
-                num_out_tokens);
+            if (num_negative_one_in_indices == 0) {
+                moe_permute_topK_row_map<<<blocks, threads, 0, stream>>>(
+                    sorted_row_id,
+                    row_id_map,
+                    num_rows,
+                    num_topK,
+                    num_out_tokens);
+            } else {
+                moe_permute_topK_row_map<<<blocks, threads, 0, stream>>>(
+                    sorted_row_id,
+                    row_id_map,
+                    num_rows,
+                    num_topK,
+                    num_out_tokens,
+                    num_negative_one_in_indices);
+                // size_t num_elements = num_rows * num_topK;
+                // std::vector<int> host_row_id_map(num_elements);
+                // cudaMemcpy(host_row_id_map.data(), sorted_row_id, num_rows * num_topK * sizeof(int), cudaMemcpyDeviceToHost);
+                // for (int i = 0; i < num_rows; ++i) {
+                //     for (int j = 0; j < num_topK; j++)
+                //         std::cout << host_row_id_map[i * num_topK + j] << " ";
+                //     std::cout << std::endl;
+                // }
+            }
 
             blocks = num_rows;
             threads = std::min(num_cols / kElementsPerAccess, 1024);
@@ -453,6 +504,7 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_topK_op(
     Tensor              indices,
     int64_t             num_out_tokens,
     std::vector<Tensor> workspace,
+    int64_t             num_negative_one_in_indices,
     int64_t             max_expanded_token_num)
 {
     const int num_tokens = input.size(0);
@@ -527,7 +579,8 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_topK_op(
             num_topK,
             num_cols,
             num_out_tokens,
-            stream);
+            stream,
+            num_negative_one_in_indices);
 
         break;
     }
@@ -549,7 +602,8 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_topK_op(
             num_topK,
             num_cols,
             num_out_tokens,
-            stream);
+            stream,
+            num_negative_one_in_indices);
 
         break;
     }
@@ -572,7 +626,8 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_topK_op(
             num_topK,
             num_cols,
             num_out_tokens,
-            stream);
+            stream,
+            num_negative_one_in_indices);
 
         break;
     }
@@ -596,7 +651,8 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_topK_op(
             num_topK,
             num_cols,
             num_out_tokens,
-            stream);
+            stream,
+            num_negative_one_in_indices);
 
         break;
     }
@@ -618,7 +674,8 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_topK_op(
             num_topK,
             num_cols,
             num_out_tokens,
-            stream);
+            stream,
+            num_negative_one_in_indices);
 
         break;
     }
@@ -826,6 +883,7 @@ std::tuple<Tensor, Tensor> moe_recover_topK_bwd_op(
             num_cols,
             0,
             stream,
+            0,
             prob_grad_ptr,
             input_fwd_ptr);
 
@@ -851,6 +909,7 @@ std::tuple<Tensor, Tensor> moe_recover_topK_bwd_op(
             num_cols,
             0,
             stream,
+            0,
             prob_grad_ptr,
             input_fwd_ptr);
 
@@ -877,6 +936,7 @@ std::tuple<Tensor, Tensor> moe_recover_topK_bwd_op(
             num_cols,
             0,
             stream,
+            0,
             prob_grad_ptr,
             input_fwd_ptr);
 
@@ -904,6 +964,7 @@ std::tuple<Tensor, Tensor> moe_recover_topK_bwd_op(
             num_cols,
             0,
             stream,
+            0,
             prob_grad_ptr,
             input_fwd_ptr);
 
@@ -929,6 +990,7 @@ std::tuple<Tensor, Tensor> moe_recover_topK_bwd_op(
             num_cols,
             0,
             stream,
+            0,
             prob_grad_ptr,
             input_fwd_ptr);
 

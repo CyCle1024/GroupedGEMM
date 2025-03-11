@@ -17,6 +17,7 @@ std::tuple<Tensor, Tensor, std::vector<Tensor>> moe_permute_topK_op(
     Tensor              indices,
     int64_t             num_out_tokens,
     std::vector<Tensor> workspace,
+    int64_t             num_negative_one_in_indices,
     int64_t             max_expanded_token_num);
 
 torch::Tensor moe_recover_topK_op(

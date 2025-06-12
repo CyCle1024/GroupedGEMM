@@ -1,3 +1,5 @@
+import os
+
 # NOTE: Torch needs to be imported before the custom
 # extensions. Otherwise libc10.so cannot be found.
 import torch
@@ -6,6 +8,9 @@ import torch
 # error message and instructions for building the
 # c++ operations.
 import grouped_gemm_backend as backend
+
+
+use_cutlass = int(os.getenv("GROUPED_GEMM_USE_CUTLASS", "0")) != 0 
 
 
 def _allocate_output(a, b, batch_sizes, trans_a, trans_b):
@@ -22,9 +27,11 @@ def _allocate_output(a, b, batch_sizes, trans_a, trans_b):
     return torch.empty(*shape, device=a.device, dtype=a.dtype)
 
 def gmm(a, b, batch_sizes, trans_a=False, trans_b=False, c=None, num_sm=-1):
+    global use_cutlass
     if c is None:
         c = _allocate_output(a, b, batch_sizes, trans_a, trans_b)
-    backend.gmm(a, b, c, batch_sizes, trans_a, trans_b, num_sm)
+    batch_sizes = batch_sizes.cuda() if use_cutlass else batch_sizes.cpu()
+    backend.gmm(a, b, c, batch_sizes, trans_a, trans_b, num_sm, use_cutlass)
     return c
 
 def sinkhorn(cost, tol=0.0001):

@@ -5,6 +5,7 @@ from absl.testing import parameterized
 from grouped_gemm import ops
 import numpy as np
 import torch
+from grouped_gemm.backend import use_cutlass
 
 
 def allclose(x, y, pct=2.0):
@@ -51,6 +52,9 @@ def gmm(a, b, batch_sizes, trans_b=False):
         start += size
     return torch.cat(out)
 
+def ops_gmm(a, b, batch_sizes, trans_b):
+    return ops.gmm(a, b, batch_sizes, trans_b, num_sm=-1)
+
 
 @parameterized.parameters(*_TEST_PROBLEMS)
 class OpsTest(parameterized.TestCase):
@@ -66,7 +70,7 @@ class OpsTest(parameterized.TestCase):
         a_ref = a.detach().clone().requires_grad_(True)
         b_ref = b.detach().clone().requires_grad_(True)
 
-        out = ops.gmm(a, b, batch_sizes, trans_b)
+        out = ops_gmm(a, b, batch_sizes, trans_b)
         expected_out = gmm(a_ref, b_ref, batch_sizes, trans_b)
         self.assertTrue(allclose(out, expected_out))
 
@@ -93,7 +97,7 @@ class OpsTest(parameterized.TestCase):
         a_ref = a.detach().clone().requires_grad_(True)
         b_ref = b.detach().clone().requires_grad_(True)
 
-        out = ops.gmm(a, b, batch_sizes, trans_b)
+        out = ops_gmm(a, b, batch_sizes, trans_b)
         expected_out = gmm(a_ref, b_ref, batch_sizes, trans_b)
         self.assertTrue(allclose(out, expected_out))
 

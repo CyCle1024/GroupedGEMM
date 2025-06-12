@@ -7,6 +7,7 @@ void GroupedGemm(torch::Tensor a,
 		 torch::Tensor c,
 		 torch::Tensor batch_sizes,
 		 bool trans_a, bool trans_b,
-		 int available_sm_count=-1);
+		 int available_sm_count=-1,
+		 bool use_cutlass=false);
 
 }  // namespace grouped_gemm

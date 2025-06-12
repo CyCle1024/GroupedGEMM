@@ -474,17 +474,17 @@ void GroupedGemm(torch::Tensor a,
 		 torch::Tensor c,
 		 torch::Tensor batch_sizes,
 		 bool trans_a, bool trans_b,
-     int available_sm_count) {
+     int available_sm_count, bool use_cutlass) {
   // NOTE: We only support 'trans_a' or 'trans_b', not both.
   TORCH_CHECK(!(trans_a && trans_b));
 
-#if !defined(GROUPED_GEMM_CUTLASS)
+  if (!use_cutlass) {
   // No way to run cuBLAS kernels if the problem dimensions are not known on the host.
   TORCH_CHECK(batch_sizes.is_cpu());
-#else
+  } else {
   // CUTLASS can handle both CPU- and CUDA-resident problem dimensions.
   TORCH_CHECK(batch_sizes.is_cuda() || batch_sizes.is_cpu());
-#endif
+  }
   TORCH_CHECK(batch_sizes.ndimension() == 1);
   TORCH_CHECK(batch_sizes.scalar_type() == torch::kInt64);
 
@@ -494,14 +494,14 @@ void GroupedGemm(torch::Tensor a,
   TORCH_CHECK(a.ndimension() == 2);
   TORCH_CHECK(a.scalar_type() == torch::kBFloat16);
 
-#if !defined(GROUPED_GEMM_CUTLASS)
+  if (!use_cutlass) {
   if (trans_a) {
     // If we can't use CUTLASS for the transposed cases, defer to the variable 'k' helper using cuBLAS
     // for the rest of the op.
     GroupedGemmVariableK(a, b, c, batch_sizes);
     return;
   }
-#endif
+  }
 
   TORCH_CHECK(b.is_cuda());
   TORCH_CHECK(c.is_cuda());
@@ -542,10 +542,10 @@ void GroupedGemm(torch::Tensor a,
   TORCH_CHECK(b.is_contiguous());
   TORCH_CHECK(c.is_contiguous());
 
-#if !defined(GROUPED_GEMM_CUTLASS)
+  if (!use_cutlass) {
   CublasGroupedGemm(a, b, c, batch_sizes, trans_b);
   return;
-#else
+  } else {
   // The `coord_template` argument contains `kDynamicDim` as one of its dimensions
   // as a placeholder. This placeholder is later expanded into the actual dimension
   // for every element of the batch,  either on the host or on the device
@@ -563,7 +563,7 @@ void GroupedGemm(torch::Tensor a,
   }
   CutlassGroupedGemm<false, false>(a, b, c, batch_sizes, coord_template, available_sm_count);
   return;
-#endif
+  }
 }
 
 }  // namespace grouped_gemm

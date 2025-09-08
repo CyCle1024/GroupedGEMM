@@ -62,7 +62,7 @@ setup(
     author="Trevor Gale, Jiang Shao, Shiqing Fan",
     author_email="tgale@stanford.edu, jiangs@nvidia.com, shiqingf@nvidia.com",
     description="GEMM Grouped",
-    url="https://github.com/fanshiqing/grouped_gemm",
+    url="https://github.com/InternLM/grouped_gemm",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: BSD License",
